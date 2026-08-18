@@ -315,7 +315,16 @@ func (p *serviceGraphConnector) aggregateMetrics(ctx context.Context, td ptrace.
 							p.upsertDimensions(serverKind, e.Dimensions, rAttributes, span.Attributes())
 						})
 					} else {
-						fallthrough
+						traceID := span.TraceID()
+						key := store.NewKey(traceID, span.ParentSpanID())
+						isNew, err = p.store.UpsertEdge(key, func(e *store.Edge) {
+							e.TraceID = traceID
+							e.ConnectionType = connectionType
+							e.ServerService = serviceName
+							e.ServerLatencySec = spanDuration(span)
+							e.Failed = e.Failed || span.Status().Code() == ptrace.StatusCodeError
+							p.upsertDimensions(serverKind, e.Dimensions, rAttributes, span.Attributes())
+						})
 					}
 				case ptrace.SpanKindServer:
 					traceID := span.TraceID()
