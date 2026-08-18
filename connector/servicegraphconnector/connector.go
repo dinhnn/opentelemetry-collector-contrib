@@ -53,6 +53,10 @@ var (
 
 	defaultDatabaseNameAttributes = []string{string(conventionsv125.DBNameKey)}
 
+	defaultMessagingNameAttributes = []string{string(conventionsv125.MessagingDestinationNameKey,conventionsv125.MessagingSystemKey)}
+
+	
+
 	defaultMetricsFlushInterval = 60 * time.Second // 1 DPM
 )
 
@@ -121,6 +125,10 @@ func newConnector(set component.TelemetrySettings, config component.Config, next
 
 	if len(pConfig.DatabaseNameAttributes) == 0 {
 		pConfig.DatabaseNameAttributes = defaultDatabaseNameAttributes
+	}
+
+	if len(pConfig.MessagingNameAttributes) == 0 {
+		pConfig.MessagingNameAttributes = defaultMessagingNameAttributes
 	}
 
 	if pConfig.MetricsFlushInterval == nil {
@@ -276,7 +284,11 @@ func (p *serviceGraphConnector) aggregateMetrics(ctx context.Context, td ptrace.
 						if virtualNodeFeatureGate.IsEnabled() {
 							p.upsertPeerAttributes(p.config.VirtualNodePeerAttributes, e.Peer, span.Attributes())
 						}
-
+						if connectionType == store.MessagingSystem {
+							if topicName, ok := getFirstMatchingValue(p.config.MessagingNameAttributes, rAttributes, span.Attributes()); ok {
+								e.ServerService = topicName
+							}
+						}
 						// A database request will only have one span, we don't wait for the server
 						// span but just copy details from the client span
 						if dbName, ok := getFirstMatchingValue(p.config.DatabaseNameAttributes, rAttributes, span.Attributes()); ok {
@@ -286,9 +298,25 @@ func (p *serviceGraphConnector) aggregateMetrics(ctx context.Context, td ptrace.
 						}
 					})
 				case ptrace.SpanKindConsumer:
-					// override connection type and continue processing as span kind server
 					connectionType = store.MessagingSystem
-					fallthrough
+					// override connection type and continue processing as span kind server
+					topicName, ok := getFirstMatchingValue(p.config.MessagingNameAttributes, rAttributes, span.Attributes());
+					if ok {
+						traceID := span.TraceID()
+						key := store.NewKey(traceID, span.SpanID())
+						isNew, err = p.store.UpsertEdge(key, func(e *store.Edge) {
+							e.TraceID = traceID
+							e.ConnectionType = store.MessagingSystem
+							e.ServerService = serviceName
+							e.ServerLatencySec = spanDuration(span)
+							e.Failed = e.Failed || span.Status().Code() == ptrace.StatusCodeError
+							e.ClientService = topicName
+							p.upsertDimensions(serverKind, e.Dimensions, rAttributes, span.Attributes())
+						})
+					} else {
+						fallthrough
+					}
+					
 				case ptrace.SpanKindServer:
 					traceID := span.TraceID()
 					key := store.NewKey(traceID, span.ParentSpanID())
