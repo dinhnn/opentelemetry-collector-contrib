@@ -55,6 +55,7 @@ var (
 
 	defaultMessagingNameAttributes = []string{string(conventionsv125.MessagingDestinationNameKey)}
 
+	defaultSchedulerNameAttributes = []string{"scheduler.name"}
 
 	defaultMetricsFlushInterval = 60 * time.Second // 1 DPM
 )
@@ -128,6 +129,10 @@ func newConnector(set component.TelemetrySettings, config component.Config, next
 
 	if len(pConfig.MessagingNameAttributes) == 0 {
 		pConfig.MessagingNameAttributes = defaultMessagingNameAttributes
+	}
+
+	if len(pConfig.SchedulerNameAttributes) == 0 {
+		pConfig.SchedulerNameAttributes = defaultSchedulerNameAttributes
 	}
 
 	if pConfig.MetricsFlushInterval == nil {
@@ -337,6 +342,26 @@ func (p *serviceGraphConnector) aggregateMetrics(ctx context.Context, td ptrace.
 						e.Failed = e.Failed || span.Status().Code() == ptrace.StatusCodeError
 						p.upsertDimensions(serverKind, e.Dimensions, rAttributes, span.Attributes())
 					})
+				case ptrace.SpanKindInternal:
+					if !span.ParentSpanID().IsEmpty() {
+						continue
+					}
+					schedulerName, ok := getFirstMatchingValue(p.config.SchedulerNameAttributes, rAttributes, span.Attributes());
+					if ok {
+						traceID := span.TraceID()
+						key := store.NewKey(traceID, span.SpanID())
+						isNew, err = p.store.UpsertEdge(key, func(e *store.Edge) {
+							e.TraceID = traceID
+							e.ConnectionType = store.MessagingSystem
+							e.ServerService = serviceName
+							e.ServerLatencySec = spanDuration(span)
+							e.Failed = e.Failed || span.Status().Code() == ptrace.StatusCodeError
+							e.ClientService = schedulerName
+							p.upsertDimensions(serverKind, e.Dimensions, rAttributes, span.Attributes())
+						})
+					} else {
+						continue;
+					}
 				default:
 					// this span is not part of an edge
 					continue

@@ -55,6 +55,12 @@ type Config struct {
 	// The default value is {"messaging.destination.name"}.
 	MessagingNameAttributes []string `mapstructure:"messaging_name_attributes"`
 
+	// SchedulerNameAttributes is the attribute name list of attributes need to match used to identify the scheduler  name from span attributes, the higher the front, the higher the priority.
+	// The default value is {"scheduler.name"}.
+	SchedulerNameAttributes []string `mapstructure:"scheduler_name_attributes"`
+
+	
+
 	// MetricsTimestampOffset is the offset to subtract from metric timestamps.
 	// If set to a positive duration, metric timestamps will be set to (current time - offset),
 	// effectively shifting metrics to appear as if they were generated in the past.
