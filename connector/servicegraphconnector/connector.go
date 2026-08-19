@@ -352,12 +352,12 @@ func (p *serviceGraphConnector) aggregateMetrics(ctx context.Context, td ptrace.
 						key := store.NewKey(traceID, span.SpanID())
 						isNew, err = p.store.UpsertEdge(key, func(e *store.Edge) {
 							e.TraceID = traceID
-							e.ConnectionType = store.MessagingSystem
+							e.ConnectionType = store.VirtualNode
 							e.ServerService = serviceName
 							e.ServerLatencySec = spanDuration(span)
 							e.Failed = e.Failed || span.Status().Code() == ptrace.StatusCodeError
-							e.ClientService = schedulerName
-							p.upsertDimensions(serverKind, e.Dimensions, rAttributes, span.Attributes())
+							e.ClientService = serviceName + "-scheduler"
+							e.Dimensions["scheduler_name"] = schedulerName
 						})
 					} else {
 						continue;
